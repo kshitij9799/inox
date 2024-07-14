@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
                             latitude,
                             longitude
                         )
-                        theaterList.add(theatre.TheatreName + " (" + distance.toInt() + " km)")
+                        theaterList.add(theatre.TheatreName + " (" + distance.toInt() + " km away)")
                     }
                 }
             }
