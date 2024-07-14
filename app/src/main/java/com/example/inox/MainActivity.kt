@@ -21,6 +21,7 @@ import com.example.inox.model.Schedules
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -44,42 +45,52 @@ class MainActivity : AppCompatActivity() {
         val cinemaSpinner: Spinner = findViewById(R.id.cinemaSpinner)
 
         lifecycleScope.launch {
-            val movieNameList = getMovieName(movieSpinner)
-            CoroutineScope(Dispatchers.Main).launch {
-                val adapter = SpinnerAdapter(application, movieNameList, 0)
-                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                movieSpinner.adapter = adapter
-                movieSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(
-                        parent: AdapterView<*>?,
-                        view: View?,
-                        position: Int,
-                        id: Long
-                    ) {
-                        if (position == 0) {
-                            return
-                        }
-                        val selectedItem = parent?.getItemAtPosition(position).toString()
-                        Toast.makeText(applicationContext, selectedItem, Toast.LENGTH_SHORT).show()
-                        lifecycleScope.launch {
-                            getDateOption(
-                                cinemaSpinner,
-                                dateSpinner,
-                                movieList[position - 1]
-                            )
-                        }
-                    }
-
-                    override fun onNothingSelected(p0: AdapterView<*>?) {
-
-                    }
-                }
-            }
+            openMovieListoptn(movieSpinner, cinemaSpinner, dateSpinner)
         }
-
 
         Log.d("checkData", "onCreate: " + movieSpinner.selectedItem.toString())
 
+    }
+
+    private suspend fun MainActivity.openMovieListoptn(
+        movieSpinner: Spinner,
+        cinemaSpinner: Spinner,
+        dateSpinner: Spinner
+    ) {
+        val openMovieListoptnHandler = CoroutineExceptionHandler { _, throwable ->
+            println("error found in openMovieListoptn coroutine: $throwable")
+        }
+        val movieNameList = getMovieName(movieSpinner)
+        CoroutineScope(Dispatchers.Main + openMovieListoptnHandler).launch {
+            val adapter = SpinnerAdapter(application, movieNameList, 0)
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            movieSpinner.adapter = adapter
+            movieSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long
+                ) {
+                    if (position == 0) {
+                        return
+                    }
+                    val selectedItem = parent?.getItemAtPosition(position).toString()
+                    Toast.makeText(applicationContext, selectedItem, Toast.LENGTH_SHORT).show()
+                    lifecycleScope.launch {
+                        getDateOption(
+                            cinemaSpinner,
+                            dateSpinner,
+                            movieList[position - 1]
+                        )
+                    }
+                }
+
+                override fun onNothingSelected(p0: AdapterView<*>?) {
+
+                }
+            }
+        }
     }
 
     private suspend fun getDateOption(
@@ -87,8 +98,11 @@ class MainActivity : AppCompatActivity() {
         dateSpinner: Spinner,
         selectedItem: Movies
     ) {
+        val getDateOptionHandler = CoroutineExceptionHandler { _, throwable ->
+            println("error found in getDateOption coroutine: $throwable")
+        }
         val movieId = selectedItem.filmcommonId
-        val res = CoroutineScope(Dispatchers.IO).async { getResponse() }
+        val res = CoroutineScope(Dispatchers.IO + getDateOptionHandler).async { getResponse() }
         val dateList = mutableListOf<Schedules>()
         val avaliableDate = mutableListOf("Select Date")
         val response = res.await()
@@ -104,7 +118,7 @@ class MainActivity : AppCompatActivity() {
             if (!avaliableDate.contains(date.day)) avaliableDate.add(date.day)
         }
 
-        CoroutineScope(Dispatchers.Main).launch {
+        CoroutineScope(Dispatchers.Main + getDateOptionHandler).launch {
             Log.d("checkData", "onCreate222: $avaliableDate")
             val adapter = SpinnerAdapter(application, avaliableDate, 0)
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -192,10 +206,14 @@ class MainActivity : AppCompatActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
+        val permissionResultHandler = CoroutineExceptionHandler { _, throwable ->
+            println("error found in onRequestPermissionsResult coroutine: $throwable")
+        }
+
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                CoroutineScope(Dispatchers.Main).launch {
+                CoroutineScope(Dispatchers.Main + permissionResultHandler).launch {
                     val response = async { getResponse() }.await()
                     getCinemaOption(findViewById(R.id.cinemaSpinner), response = response)
                 }
@@ -253,7 +271,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun getResponse(): Response {
-        val response = CoroutineScope(Dispatchers.IO).async {
+        val getResponseHandler = CoroutineExceptionHandler { _, throwable ->
+            println("error found in getResponse coroutine: $throwable")
+        }
+        val response = CoroutineScope(Dispatchers.IO + getResponseHandler).async {
             readJsonFromAssets(application, "getcinema.json")
         }
         val gson = Gson()
