@@ -2,6 +2,7 @@ package com.example.inox
 
 import android.Manifest
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
@@ -18,6 +19,7 @@ import com.example.inox.adapter.SpinnerAdapter
 import com.example.inox.model.Movies
 import com.example.inox.model.Response
 import com.example.inox.model.Schedules
+import com.example.inox.model.Theatres
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
@@ -28,34 +30,43 @@ import kotlinx.coroutines.async
 
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Locale
 import kotlin.math.*
 
 class MainActivity : AppCompatActivity() {
 
     private val LOCATION_PERMISSION_REQUEST_CODE: Int by lazy { 1001 }
     private var movieList: List<Movies> = mutableListOf()
+    private var selectedDate = ""
+    private var selectedMovieId = ""
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+
         setContentView(R.layout.activity_main)
         val movieSpinner: Spinner = findViewById(R.id.movieSpinner)
         val dateSpinner: Spinner = findViewById(R.id.dateSpinner)
         val cinemaSpinner: Spinner = findViewById(R.id.cinemaSpinner)
+        val timingSpinner: Spinner = findViewById(R.id.timingSpinner)
 
         lifecycleScope.launch {
-            openMovieListoptn(movieSpinner, cinemaSpinner, dateSpinner)
+            openMovieListoptn(movieSpinner, cinemaSpinner, dateSpinner, timingSpinner)
         }
 
         Log.d("checkData", "onCreate: " + movieSpinner.selectedItem.toString())
 
     }
 
-    private suspend fun MainActivity.openMovieListoptn(
+    private suspend fun openMovieListoptn(
         movieSpinner: Spinner,
         cinemaSpinner: Spinner,
-        dateSpinner: Spinner
+        dateSpinner: Spinner,
+        timingSpinner: Spinner
     ) {
         val openMovieListoptnHandler = CoroutineExceptionHandler { _, throwable ->
             println("error found in openMovieListoptn coroutine: $throwable")
@@ -78,10 +89,12 @@ class MainActivity : AppCompatActivity() {
                     val selectedItem = parent?.getItemAtPosition(position).toString()
                     Toast.makeText(applicationContext, selectedItem, Toast.LENGTH_SHORT).show()
                     lifecycleScope.launch {
+                        selectedMovieId = movieList[position - 1].filmcommonId
                         getDateOption(
                             cinemaSpinner,
                             dateSpinner,
-                            movieList[position - 1]
+                            movieList[position - 1],
+                            timingSpinner
                         )
                     }
                 }
@@ -96,12 +109,13 @@ class MainActivity : AppCompatActivity() {
     private suspend fun getDateOption(
         cinemaSpinner: Spinner,
         dateSpinner: Spinner,
-        selectedItem: Movies
+        selectedMovieItem: Movies,
+        timingSpinner: Spinner
     ) {
         val getDateOptionHandler = CoroutineExceptionHandler { _, throwable ->
             println("error found in getDateOption coroutine: $throwable")
         }
-        val movieId = selectedItem.filmcommonId
+        val movieId = selectedMovieItem.filmcommonId
         val res = CoroutineScope(Dispatchers.IO + getDateOptionHandler).async { getResponse() }
         val dateList = mutableListOf<Schedules>()
         val avaliableDate = mutableListOf("Select Date")
@@ -124,6 +138,8 @@ class MainActivity : AppCompatActivity() {
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             dateSpinner.adapter = adapter
             dateSpinner.visibility = View.VISIBLE
+            cinemaSpinner.visibility = View.GONE
+            timingSpinner.visibility = View.GONE
 
             dateSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(
@@ -138,7 +154,8 @@ class MainActivity : AppCompatActivity() {
                     val item = parent?.getItemAtPosition(position).toString()
                     Toast.makeText(applicationContext, item, Toast.LENGTH_SHORT).show()
                     lifecycleScope.launch {
-                        getCinemaOption(cinemaSpinner, avaliableDate[position - 1], response)
+                        selectedDate = avaliableDate[position]
+                        getCinemaOption(timingSpinner,cinemaSpinner, response, avaliableDate[position], movieId)
                     }
                 }
 
@@ -152,12 +169,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getCinemaOption(
+        timingSpinner: Spinner,
         cinemaSpinner: Spinner,
-        selectedDate: String? = null,
-        response: Response
+        response: Response,
+        selectedDate: String,
+        selectedMovieId: String
     ) {
-
-        val theaterList = mutableListOf<String>("Select Cinema")
+        val theaterList = mutableListOf<Theatres>()
+        val theaterNameList = mutableListOf<String>("Select Cinema")
         val fusedLocationClient: FusedLocationProviderClient =
             LocationServices.getFusedLocationProviderClient(this)
 
@@ -190,15 +209,64 @@ class MainActivity : AppCompatActivity() {
                             latitude,
                             longitude
                         )
-                        theaterList.add(theatre.TheatreName + " (" + distance.toInt() + " km away)")
+                        theaterList.add(theatre)
+                        theaterNameList.add(theatre.TheatreName + " (" + distance.toInt() + " km away)")
                     }
                 }
             }
 
-        val adapter = SpinnerAdapter(application, theaterList, 0)
+        val adapter = SpinnerAdapter(application, theaterNameList, 0)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         cinemaSpinner.adapter = adapter
         cinemaSpinner.visibility = View.VISIBLE
+        timingSpinner.visibility = View.GONE
+
+        cinemaSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                if (position == 0) {
+                    return
+                }
+                val item = parent?.getItemAtPosition(position).toString()
+                Toast.makeText(applicationContext, item, Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch {
+                    getTimeOptn(timingSpinner, selectedMovieId ,selectedDate, theaterList[position-1].PosTheatreID,response)
+                }
+            }
+
+            override fun onNothingSelected(p0: AdapterView<*>?) {
+
+            }
+        }
+    }
+
+
+    private fun getTimeOptn(timingSpinner: Spinner, selectedMovieId: String, selectedDate: String, selectedTheaterId: String, response: Response) {
+        val timeList = mutableListOf<String>("Select Time")
+        val schedules = response.schedules
+        for (schedule in schedules) {
+            if (schedule.day == this.selectedDate) {
+                for (show in schedule.showTimings) {
+                    if (selectedTheaterId == show[8] && this.selectedMovieId == show[1]) {
+                        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+                        val outputFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
+                        val time = inputFormat.parse(show[2])?.let { outputFormat.format(it) }
+                        if (time != null) {
+                            timeList.add("$time • ${show[5]}")
+                        }
+                    }
+                }
+            }
+        }
+        val adapter = SpinnerAdapter(application, timeList, 0)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        timingSpinner.adapter = adapter
+        timingSpinner.visibility = View.VISIBLE
+
     }
 
     override fun onRequestPermissionsResult(
@@ -215,7 +283,13 @@ class MainActivity : AppCompatActivity() {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 CoroutineScope(Dispatchers.Main + permissionResultHandler).launch {
                     val response = async { getResponse() }.await()
-                    getCinemaOption(findViewById(R.id.cinemaSpinner), response = response)
+                    getCinemaOption(
+                        findViewById(R.id.timingSpinner),
+                        findViewById(R.id.cinemaSpinner),
+                        response,
+                        selectedDate,
+                        selectedMovieId
+                    )
                 }
             } else {
                 if (!ActivityCompat.shouldShowRequestPermissionRationale(

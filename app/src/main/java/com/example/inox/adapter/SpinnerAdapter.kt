@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.TextView
+import com.example.inox.R
 
 class SpinnerAdapter(context: Context, items: List<String>, private val disabledPosition: Int) :
     ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, items) {
